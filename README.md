@@ -19,13 +19,6 @@ A new CLI command `show interfaces counters top-n` that:
 - Reads from COUNTERS_DB with proper OID resolution
 - Handles 64-bit counter rollovers correctly
 
-## Quick Start
-
-### Prerequisites
-
-- Python 3.12
-- WSL (Windows Subsystem for Linux) or Linux environment
-
 ### Setup
 
 ```bash
@@ -45,20 +38,20 @@ pip list | grep -E 'click|tabulate|natsort'
 
 ```bash
 # Show top 5 interfaces by traffic
-python cli.py --top 5 --interval 1
+python cli.py top-n --top 5 --interval 1
 
 # Show top 3 interfaces
-python cli.py --top 3 --interval 1
+python cli.py top-n --top 3 --interval 1
 
 # Use 2-second sampling interval
-python cli.py --top 5 --interval 2
+python cli.py top-n --top 5 --interval 2
 ```
 
 ### JSON Output
 
 ```bash
 # Get JSON output for automation
-python cli.py --top 5 --interval 1 --json
+python cli.py top-n --top 5 --interval 1 --json
 ```
 
 Output:
@@ -77,16 +70,6 @@ Output:
   },
   ...
 ]
-```
-
-### Modes
-
-```bash
-# MOCK mode (test data, no Redis required)
-python cli.py --top 5 --mode MOCK
-
-# REAL mode (requires SONiC container with swsscommon)
-python cli.py --top 5 --mode REAL
 ```
 
 ## Architecture
@@ -109,8 +92,7 @@ python cli.py --top 5 --mode REAL
    - Sorting by total throughput
 
 4. **cli.py** - Click CLI command
-   - `show interfaces counters top-n` command
-   - Options: --top, --interval, --json, --mode
+   - `top-n` command with options: --top, --interval, --json, --mode
 
 ### OID Resolution Flow
 
@@ -144,7 +126,7 @@ Unit tests in `traffic_processor.py` prove this logic works correctly.
 ### Run All Tests
 
 ```bash
-python test_sonic.py
+python final_validation.py
 ```
 
 ### Acceptance Criteria (All 8 Must Pass)
@@ -161,7 +143,7 @@ python test_sonic.py
 ### Verify JSON Output
 
 ```bash
-python cli.py --top 5 --json | python -m json.tool
+python cli.py top-n --top 5 --json | python -m json.tool
 ```
 
 ## Integration with sonic-utilities
@@ -201,11 +183,11 @@ sonic/
 +------------+----------+----------+---------+---------+---------------+---------------+------------------------+
 | Interface  | RX Bytes | TX Bytes | RX Pkts | TX Pkts | RX Rate (B/s) | TX Rate (B/s) | Total Throughput (B/s) |
 +------------+----------+----------+---------+---------+---------------+---------------+------------------------+
-| Ethernet0  | 942,990  | 819,052  |   504   |   665   |   942990.00   |   819052.00   |       1762042.00       |
-| Ethernet20 | 546,681  | 594,268  |   394   |   173   |   546681.00   |   594268.00   |       1140949.00       |
-| Ethernet16 | 869,264  | 257,486  |   830   |   282   |   869264.00   |   257486.00   |       1126750.00       |
-| Ethernet28 | 335,538  | 767,359  |   517   |  1,094  |   335538.00   |   767359.00   |       1102897.00       |
-| Ethernet8  | 323,607  | 675,636  |   642   |   157   |   323607.00   |   675636.00   |        999243.00       |
+| Ethernet0  | 956,802  | 785,720  |   138   |   670   |   956802.00   |   785720.00   |       1742522.00       |
+| Ethernet16 | 839,985  | 791,808  |   495   |   661   |   839985.00   |   791808.00   |       1631793.00       |
+| Ethernet12 | 838,437  | 713,284  |   412   |   596   |   838437.00   |   713284.00   |       1551721.00       |
+| Ethernet24 | 539,177  | 918,704  |   933   |   957   |   539177.00   |   918704.00   |       1457881.00       |
+| Ethernet32 | 877,038  | 559,337  |   760   |   429   |   877038.00   |   559337.00   |       1436375.00       |
 +------------+----------+----------+---------+---------+---------------+---------------+------------------------+
 ```
 
@@ -215,14 +197,3 @@ sonic/
 - **Mentors:** Nikhil Moray (nikhil@aviznetworks.com), Madhu Paluru (madhuapa@aviznetworks.com)
 - **Organization:** SONiC
 - **Timeline:** April 10, 2026 deadline
-
-## References
-
-- [Problem Statement](https://github.com/sonic-net/sonic-mentorship-2026-Top-N-Interface-Traffic-Visibility)
-- [SONiC GitHub](https://github.com/sonic-net/SONiC)
-- [sonic-utilities](https://github.com/sonic-net/sonic-utilities)
-- [portstat Implementation](https://github.com/sonic-net/sonic-utilities/blob/master/show/interfaces/__init__.py)
-
-## License
-
-This prototype is developed for the LFX Sonic Mentorship program and will be contributed to the sonic-utilities project upon completion.
