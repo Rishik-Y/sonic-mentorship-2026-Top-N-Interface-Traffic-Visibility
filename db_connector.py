@@ -1,105 +1,86 @@
-"""SONiC COUNTERS_DB Connector Module."""
+"""COUNTERS_DB access helpers for top-N interface traffic visibility."""
 
-import random
-import json
-import sys
-from typing import Dict, List
-from data_generator import generate_sample_series, generate_with_rollover
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict, Mapping, Optional
 
 
-class COUNTERSConnector:
-    SAI_COUNTERS = {
-        'rx_bytes': 'SAI_PORT_STAT_IF_IN_OCTETS',
-        'tx_bytes': 'SAI_PORT_STAT_IF_OUT_OCTETS',
-        'rx_packets': 'SAI_PORT_STAT_IF_IN_PACKETS',
-        'tx_packets': 'SAI_PORT_STAT_IF_OUT_PACKETS'
-    }
+RX_OCTETS_FIELD = "SAI_PORT_STAT_IF_IN_OCTETS"
+TX_OCTETS_FIELD = "SAI_PORT_STAT_IF_OUT_OCTETS"
 
-    def __init__(self, mode: str = 'MOCK', quiet: bool = False):
-        self.mode = mode.upper()
-        self.connector = None
-        self.mock_data = None
-        self.interfaces = None
-        self.quiet = quiet
 
-        if self.mode == 'MOCK':
-            self._setup_mock_data()
-        elif self.mode == 'REAL':
-            self._setup_real_mode(quiet)
-        else:
-            raise ValueError(f"Invalid mode: {mode}")
+class CountersDbUnavailable(RuntimeError):
+    """Raised when COUNTERS_DB cannot be reached."""
 
-    def _setup_mock_data(self):
-        interfaces = [f"Ethernet{i}" for i in range(0, 10 * 4, 4)]
-        self.interfaces = interfaces
-        self.mock_data = generate_sample_series(interfaces, num_samples=3)
 
-    def _setup_real_mode(self, quiet: bool = False):
+@dataclass
+class InterfaceCounters:
+    """Minimal counter payload used for traffic-rate calculations."""
+
+    rx_bytes: int
+    tx_bytes: int
+
+
+class CountersDbClient:
+    """Read interface traffic counters from COUNTERS_DB."""
+
+    def __init__(self, namespace: Optional[str] = None, backend=None):
+        self.namespace = namespace
+        self._backend = backend or self._create_backend(namespace)
+
+    def _create_backend(self, namespace: Optional[str]):
         try:
-            from swsscommon.swsscommon import SonicV2Connector
-            self.connector = SonicV2Connector()
-        except ImportError:
-            self.mode = 'MOCK'
-            self._setup_mock_data()
-            return
+            from swsscommon.swsscommon import SonicV2Connector  # type: ignore
+        except Exception as exc:
+            raise CountersDbUnavailable(
+                "COUNTERS_DB access requires swsscommon in the SONiC environment"
+            ) from exc
+
+        connector_kwargs = {}
+        if namespace:
+            connector_kwargs["namespace"] = namespace
+
         try:
-            self.connector.connect()
-        except Exception:
-            self.mode = 'MOCK'
-            self._setup_mock_data()
+            connector = SonicV2Connector(**connector_kwargs)
+            connector.connect(connector.COUNTERS_DB)
+            return connector
+        except Exception as exc:
+            raise CountersDbUnavailable(
+                "Unable to connect to COUNTERS_DB. Ensure swss is running."
+            ) from exc
 
-    def _get_interface_to_oid_mapping(self) -> Dict[str, str]:
-        if self.mode == 'MOCK':
-            return {
-                f"Ethernet{i}": f"oid:{0x1000000000001 + i}"
-                for i in range(len(self.interfaces))
-            }
-        return {}
+    def _hgetall(self, key: str) -> Mapping[str, str]:
+        return self._backend.get_all(self._backend.COUNTERS_DB, key) or {}
 
-    def _get_counters_for_oid(self, oid: str) -> Dict[str, int]:
-        if self.mode == 'MOCK':
-            base = random.randint(1_000_000, 100_000_000)
-            return {
-                self.SAI_COUNTERS['rx_bytes']: base + random.randint(0, 1_000_000),
-                self.SAI_COUNTERS['tx_bytes']: base + random.randint(0, 1_000_000),
-                self.SAI_COUNTERS['rx_packets']: base // 1500 + random.randint(0, 100),
-                self.SAI_COUNTERS['tx_packets']: base // 1500 + random.randint(0, 100)
-            }
-        return {}
+    def get_port_name_map(self) -> Mapping[str, str]:
+        return self._hgetall("COUNTERS_PORT_NAME_MAP")
 
-    def get_counters(self, sample_idx: int = 0) -> Dict[str, Dict[str, int]]:
-        if self.mode == 'MOCK':
-            return self.mock_data[sample_idx]
-        result = {}
-        interface_to_oid = self._get_interface_to_oid_mapping()
-        for interface_name, oid in interface_to_oid.items():
-            counters = self._get_counters_for_oid(oid)
-            result[interface_name] = {}
-            for sai_key, value in counters.items():
-                for counter_name, skey in self.SAI_COUNTERS.items():
-                    if sai_key == skey:
-                        result[interface_name][counter_name] = value
-        return result
+    def get_snapshot(self) -> Dict[str, InterfaceCounters]:
+        port_name_map = self.get_port_name_map()
+        snapshot: Dict[str, InterfaceCounters] = {}
 
-    def get_counters_raw(self, sample_idx: int = 0) -> Dict[str, Dict[str, int]]:
-        if self.mode == 'MOCK':
-            result = {}
-            for interface, counters in self.mock_data[sample_idx].items():
-                result[interface] = {self.SAI_COUNTERS[k]: v for k, v in counters.items()}
-            return result
-        return self.get_counters(sample_idx)
+        for interface_name, oid in port_name_map.items():
+            key = f"COUNTERS:{oid}"
+            row = self._hgetall(key)
+            if not row:
+                continue
+
+            rx_raw = row.get(RX_OCTETS_FIELD, "0")
+            tx_raw = row.get(TX_OCTETS_FIELD, "0")
+
+            try:
+                rx_bytes = int(rx_raw)
+                tx_bytes = int(tx_raw)
+            except (TypeError, ValueError):
+                rx_bytes = 0
+                tx_bytes = 0
+
+            snapshot[interface_name] = InterfaceCounters(rx_bytes=rx_bytes, tx_bytes=tx_bytes)
+
+        return snapshot
 
     def close(self):
-        if self.connector:
-            try:
-                self.connector.close()
-            except Exception:
-                pass
-
-
-def get_counters_from_mock() -> Dict[str, Dict[str, int]]:
-    return COUNTERSConnector(mode='MOCK').get_counters()
-
-
-def get_counters_from_real() -> Dict[str, Dict[str, int]]:
-    return COUNTERSConnector(mode='REAL').get_counters()
+        close_fn = getattr(self._backend, "close", None)
+        if close_fn:
+            close_fn()
