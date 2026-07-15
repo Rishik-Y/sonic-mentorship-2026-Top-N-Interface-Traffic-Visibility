@@ -25,8 +25,7 @@ SWSS, Redis, and all the other required components run inside a virtual switch D
   You can check these dependencies with the following commands:
 
   ```bash
-  cat /etc/os-release | grep ".*22.04*"
-  uname -r | grep generic
+  cat /etc/os-release | grep -E "PRETTY_NAME|VERSION"
   python3 --version
   ```
 ### Team Kernel Module
@@ -50,6 +49,45 @@ Once the script completes successfully, verify again:
 ```bash
 lsmod | grep team
 ```
+
+sudo apt update
+sudo apt upgrade
+sudo apt install -y libboost-dev
+
+# 1. Download and install Protobuf 32 and Jansson 4 (Version >= 2.14)
+wget http://ftp.de.debian.org/debian/pool/main/p/protobuf/libprotobuf32_3.21.12-3+deb12u1_amd64.deb
+wget http://ftp.de.debian.org/debian/pool/main/j/jansson/libjansson4_2.14-2_amd64.deb
+sudo dpkg -i libprotobuf32_3.21.12-3+deb12u1_amd64.deb libjansson4_2.14-2_amd64.deb
+
+sudo dpkg -i --force-overwrite libboost-serialization*.deb
+
+sudo apt install -y \
+  ./libdashapi_*.deb \
+  ./libnl-*.deb \
+  ./libsaimetadata_*.deb \
+  ./libsaimetadata-dev_*.deb \
+  ./libsairedis_*.deb \
+  ./libsairedis-dev_*.deb \
+  ./libsaivs_*.deb \
+  ./libsaivs-dev_*.deb \
+  ./libswsscommon_*.deb \
+  ./libswsscommon-dev_*.deb \
+  ./libteam5_*.deb \
+  ./libteamdctl0_*.deb \
+  ./libyang3_*.deb \
+  ./libyang-dev_*.deb \
+  ./python3-swsscommon_*.deb \
+  ./libpython3.11*.deb \
+  ./python3.11*.deb
+
+sudo apt install -y ./swss_1.0.0_amd64.deb
+
+
+
+
+
+
+
 
 ### Install Docker CE
 
