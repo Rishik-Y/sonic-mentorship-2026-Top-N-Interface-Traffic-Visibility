@@ -15,6 +15,58 @@ SWSS, Redis, and all the other required components run inside a virtual switch D
 - [Known Issues/FAQs](#known-issues)
 
 ## Setting up your test environment
+
+Debian (Trixie)
+
+sudo apt update
+sudo apt upgrade
+
+sudo printf '#!/bin/sh\nexit 101\n' | sudo tee /usr/sbin/policy-rc.d
+sudo chmod +x /usr/sbin/policy-rc.d
+
+sudo apt install \
+./libpcre3_*.deb \
+./libyang_1*.deb \
+./libyang-cpp_1*.deb \
+./python3-yang_1*.deb \
+./libdashapi_*.deb \
+./libnl-3-200_*.deb \
+./libnl-3-dev_*.deb \
+./libnl-cli-3-200_*.deb \
+./libnl-cli-3-dev_*.deb \
+./libnl-genl-3-200_*.deb \
+./libnl-genl-3-dev_*.deb \
+./libnl-nf-3-200_*.deb \
+./libnl-nf-3-dev_*.deb \
+./libnl-route-3-200_*.deb \
+./libnl-route-3-dev_*.deb \
+./libsaimetadata_*.deb \
+./libsaimetadata-dev_*.deb \
+./libsairedis_*.deb \
+./libsairedis-dev_*.deb \
+./libsaivs_*.deb \
+./libsaivs-dev_*.deb \
+./libswsscommon_*.deb \
+./libswsscommon-dev_*.deb \
+./libteam5_*.deb \
+./libteamdctl0_*.deb \
+./libyang3_*.deb \
+./libyang-dev_3*.deb \
+./python3-libyang_3*.deb \
+./python3-swsscommon_*.deb \
+./python3-pysairedis_*.deb \
+./swss_*.deb \
+./syncd-vs_*.deb
+
+
+sudo rm /usr/sbin/policy-rc.d
+
+sudo apt-get install -y net-tools bridge-utils vlan ethtool
+
+sudo pip3 install docker pytest flaky redis distro dataclasses fstring \
+  exabgp docker lcov_cobertura
+
+
 ### System Requirements
 
   To set up your test environment, you will need:
@@ -82,13 +134,6 @@ sudo apt install -y \
 
 sudo apt install -y ./swss_1.0.0_amd64.deb
 
-
-
-
-
-
-
-
 ### Install Docker CE
 
   Install [Docker CE](https://docs.docker.com/engine/install/ubuntu/) from the official documentation.
@@ -96,20 +141,6 @@ sudo apt install -y ./swss_1.0.0_amd64.deb
   **Important:** Follow the [post-install instructions](https://docs.docker.com/engine/install/linux-postinstall/) to avoid needing `sudo` for Docker commands.
   
 
-### Install External Dependencies
-
-  Install packages required for running the VS tests:
-
-```bash
-sudo apt-get install -y net-tools bridge-utils vlan libzmq3-dev libzmq5 \
-  libboost-serialization1.74.0 libboost1.74-dev libboost-dev \
-  libhiredis0.14 libyang-dev
-
-sudo apt install -y python3-pip net-tools bridge-utils ethtool vlan \
-  libnl-nf-3-200 libnl-cli-3-200
-
-sudo pip3 install docker pytest flaky redis distro dataclasses fstring \
-  exabgp docker lcov_cobertura
 ```
 
 ### Install DASH Dependencies (Ubuntu 22.04)
