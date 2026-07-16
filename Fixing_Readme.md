@@ -61,17 +61,17 @@ sudo apt install \
 
 sudo rm /usr/sbin/policy-rc.d
 
-sudo apt-get install -y net-tools bridge-utils vlan ethtool docker.io
+sudo apt-get install -y net-tools bridge-utils vlan ethtool docker.io kmod
 
-sudo apt-get install -y python3-pip python3-docker python3-pytest python3-flaky python3-redis python3-distro exabgp python3-setuptools
+sudo apt-get install -y python3-pip python3-docker python3-pytest python3-flaky python3-redis python3-distro exabgp python3-setuptools 
 
 #### 1. Create a venv that has permission to see your installed SONiC .deb packages
 
-python3 -m venv --system-site-packages sonic-venv
+python3 -m venv --system-site-packages venv
 
 #### 2. Activate it
 
-source sonic-venv/bin/activate
+source venv/bin/activate
 
 #### 3. Now you can use standard pip freely!
 
@@ -80,8 +80,48 @@ pip install lcov_cobertura
 sudo usermod -aG docker $USER
 newgrp docker
 
+IF AND ONLY IF USING DISTROBOX:
+"# 1. Get the actual GID of the host socket
+SOCK_GID=$(stat -c '%g' /var/run/docker.sock)
+echo "Socket GID: $SOCK_GID"
+
+# 2. Align the container's docker group to match it
+sudo groupmod -g $SOCK_GID docker
+
+# 3. Refresh your session & test
+newgrp docker
+docker ps"
+
 sed -i "s/from distutils.version import StrictVersion/from distutils.version impor
 t StrictVersion, LooseVersion/g; s/StrictVersion(distro.linux_distribution()\[1\]) <= StrictVersion('8.9')/LooseVersion(distro.linux_distribution()\[1\]) <= LooseVersion('8.9')/g" test_vlan.py 
+
+or
+
+sed -i 's/from distutils.version import StrictVersion$/from distutils.version import StrictVersion, LooseVersion/' test_vlan.py
+sed -i "s/StrictVersion(distro.linux_distribution()\[1\]) <= StrictVersion('8.9')/LooseVersion(distro.linux_distribution()\[1\]) <= LooseVersion('8.9')/" test_vlan.py
+
+
+If distrobox:
+"sudo mkdir -p /lib/modules
+sudo ln -s "/run/host/lib/modules/$(uname -r)" "/lib/modules/$(uname -r)"
+ls -l "/lib/modules/$(uname -r)"
+sudo /sbin/modprobe team && echo "Success! Exit code 0"
+"
+
+If Distrobox:
+"sudo rm -rf /var/run/redis-vs /run/redis-vs
+sudo mkdir -p /run/host/var/run/redis-vs
+sudo ln -s /run/host/var/run/redis-vs /var/run/redis-vs
+sudo ln -s /run/host/var/run/redis-vs /run/redis-vs
+ls -la /var/run/redis-vs/
+"
+If Distrobox:
+"sudo rm -rf /zmq
+sudo mkdir -p /run/host/zmq
+sudo ln -s /run/host/zmq /zmq
+ls -la /zmq/ | wc -l"
+
+sudo -E "../../venv/bin/python" -m pytest
 
 
 
