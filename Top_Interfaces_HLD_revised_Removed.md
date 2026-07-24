@@ -79,7 +79,6 @@ This feature introduces `show interfaces counters top` as a **thin filter on top
 - **Instantaneous**: Results appear in ~50ms (single Redis read pass), with no blocking delay.
 - **Numerically consistent**: The rates shown are identical to those displayed by `show interfaces counters rates`, since both read from the same `RATES:` table.
 - **Zero backend changes**: No new daemons, no new DB tables, no Lua script modifications, no orchagent changes.
-- **Three files changed**: The entire feature is implemented by modifying three files in `sonic-utilities`.
 
 ## 4.3 Design Philosophy
 
@@ -284,49 +283,6 @@ def top_n_diff_print(self, cnstat_new_dict, cnstat_old_dict, ratestat_dict,
 
 ## 7.2 Flows
 
-### General Data Flow
-
-The following sequence diagram illustrates the end-to-end data flow from ASIC counter collection through the pre-computed rates pipeline to the CLI display. Most region shows the existing infrastructure that remains **unchanged**; only the final consumer (CLI) is new.
-
-```mermaid
-sequenceDiagram
-    participant ASIC as ASIC Hardware
-    participant syncd as syncd
-    participant CDB as COUNTERS_DB
-    participant Lua as port_rates.lua<br/>(Flex Counter Plugin)
-    participant CLI as show interfaces<br/>counters top
-
-    Note over ASIC, Lua: EXISTING INFRASTRUCTURE (unchanged)
-    
-    loop Every POLL_INTERVAL (default 1000ms)
-        syncd->>ASIC: SAI query: IF_IN_OCTETS, IF_OUT_OCTETS,<br/>IF_IN_UCAST_PKTS, IF_OUT_UCAST_PKTS, etc.
-        ASIC-->>syncd: Raw 64-bit counter values
-        syncd->>CDB: HSET COUNTERS:<oid> (raw counters)
-        
-        Note over Lua: Flex Counter triggers plugin execution
-        Lua->>CDB: HGET COUNTERS:<oid> (current values)
-        Lua->>CDB: HGET RATES:<oid> (previous _last values)
-        Lua->>Lua: Compute instantaneous rates:<br/>rx_bps = (in_octets - in_octets_last) × 1000/δ
-        Lua->>Lua: Apply EWMA smoothing:<br/>rate = α × rate_new + (1-α) × rate_old
-        Lua->>CDB: HSET RATES:<oid> RX_BPS, TX_BPS,<br/>RX_PPS, TX_PPS
-        Lua->>CDB: HSET RATES:<oid> _last counter values<br/>(for next cycle)
-    end
-
-    Note over CLI: NEW: CLI reads pre-computed rates
-
-    CLI->>CDB: HGETALL COUNTERS_PORT_NAME_MAP
-    CDB-->>CLI: {Ethernet0: oid:0x..., Ethernet4: oid:0x..., ...}
-    
-    loop For each port in name_map
-        CLI->>CDB: HGET RATES:<oid> RX_BPS, RX_PPS,<br/>TX_BPS, TX_PPS, RX_UTIL, TX_UTIL
-        CDB-->>CLI: Rate values (or N/A)
-    end
-
-    CLI->>CLI: Build ratestat_dict
-    CLI->>CLI: get_top_n(): sort by key, take top N
-    CLI-->>CLI: Format with tabulate
-```
-
 ### CLI Execution Flow
 
 The following sequence diagram shows the internal call chain when an operator runs `show interfaces counters top -n 5 --sort total`:
@@ -380,7 +336,7 @@ sequenceDiagram
 
 # 8 SAI API
 
-The feature relies on the same SAI counters already polled by the existing `port_rates.lua` plugin. **No new SAI API calls are required.**
+N/A
 
 # 9 Configuration and management
 
@@ -472,8 +428,6 @@ Sampled at 2026-06-25 10:14:20
      3  Ethernet112        U  621.09 MB/s   763000.00/s  598.04 MB/s  735000.00/s  1219.13 MB/s  1498000.00/s  62.11%
 ```
 
-Note: When sorting by PPS, Ethernet8 (which has many small packets at high PPS but lower BPS) may rank higher than interfaces with higher byte rates but fewer, larger packets.
-
 
 ### JSON output
 
@@ -546,91 +500,29 @@ Note: Interfaces with identical (zero) rates are tie-broken by natural sort orde
 
 ## 9.3 Config DB Enhancements
 
-There is no change in configuration or Config DB required for this feature. The feature operates entirely by reading pre-existing counter data from the `COUNTERS_DB` (specifically the `RATES:` table). Downward compatibility is naturally maintained as no schema changes are introduced.
+N/A
 
 # 10 Warmboot and Fastboot Design Impact
 
-## Warmboot
+N/A
 
-During a warmboot, the `syncd` process restarts while preserving forwarding state. The COUNTERS_DB content persists across the restart since it resides in the Redis database engine, which is not flushed during warmboot.
-
-**Impact on the `top` command:**
-
-- The `RATES:<oid>` hash entries survive the warmboot since they are stored in COUNTERS_DB.
-- When `port_rates.lua` resumes execution after warmboot, it enters the EWMA initialization phase:
-  1. **First cycle post-restart** (`INIT_DONE` state reset or stale): The plugin stores `_last` counter values but does not compute rates. The existing `RX_BPS`/`TX_BPS` values in `RATES:<oid>` remain from the pre-warmboot computation and are **stale but valid** for a short period.
-  2. **Second cycle**: Raw (unsmoothed) rates are computed from the delta between the current and `_last` values.
-  3. **Third cycle onward**: EWMA smoothing resumes normally.
-- During the 1-2 second warmboot gap, the `top` command will display the last valid rates. These are slightly stale but provide a reasonable approximation.
-- No error messages or degraded behavior occurs. The stale rates are automatically replaced by fresh values within 2-3 polling cycles.
-
-## Fastboot
-
-During a fastboot, COUNTERS_DB is flushed. This means all `RATES:<oid>` entries are cleared.
-
-**Impact on the `top` command:**
-
-- After fastboot, the `RATES:` table is empty. The `top` command will detect this condition (all values are `N/A`) and display no interfaces.
-- Within 2-3 polling cycles (2-3 seconds at default polling interval), `port_rates.lua` repopulates the `RATES:` table and the `top` command resumes normal operation.
-
-# 11 Memory Consumption
-
-Since the design is purely a CLI filter that reads from the pre-existing `RATES:` table populated by the existing `port_rates.lua` plugin, it does not add any new daemons, background processes, or database keys to the system. 
-
-Transient memory consumption only occurs during the brief execution window of the `show interfaces counters top` command:
-- The Python process fetches the `RATES:` data for all interfaces into a dictionary (identical to the memory footprint of the existing `show interfaces counters rates` command).
-- The `get_top_n()` method creates a list of tuples from this dictionary and performs an in-memory sort. 
-- For a high-density system (e.g., 512 ports), this sorting operation consumes only a few additional kilobytes of RAM.
-- All allocated memory is immediately freed when the CLI command completes.
-
-# 12 Things to be Considered
+# 11 Things to be Considered
 
 1. **`RATES:` population varies by platform:** Some vendor SDKs disable specific stats. When a counter is unavailable, the corresponding `RATES:<oid>` field will be `N/A`. The `safe_float()` helper safely treats these as `0.0` for sorting, ensuring the CLI gracefully handles incomplete data.
 2. **VOQ chassis path:** On supervisor cards, `Portstat.collect_stat_from_lc()` reads from `CHASSIS_STATE_DB` using a different schema. The rate fields (`rx_bps`, `tx_bps`, etc.) are present there too, and populate the same dictionary that the `top` filter operates on. (Needs one VOQ-fixture test to confirm).
 3. **EWMA α value limitation:** The smoothing factor is configured per-deployment in `RATES:PORT`. A short microburst won't show up in these stats since it gets diluted by the EWMA smoothing. Users investigating microbursts should be directed to the watermark counters (`show queue watermark`) instead.
 
-# 13 Testing Requirements/Design
+# 12 Testing Requirements/Design
 
-Since this feature is entirely within `sonic-utilities` and does not modify `sonic-swss`, `orchagent`, or any Lua plugins, the testing strategy is simplified. There are **no syncd integration tests** needed. All tests are Python-based, using the existing mock infrastructure in `sonic-utilities`.
+### Unit Test cases 
 
-## 13.1 Unit Test cases
+The unit tests will be provided during implementation.
 
-A new test file `tests/portstat_top_test.py` will be created, using the existing `click.testing.CliRunner` for CLI invocations and mock `COUNTERS_DB` data based on existing fixtures. 
-
-1. Default invocation
-    * Verify `show interfaces counters top` returns exactly 5 interfaces (default) sorted by total BPS descending.
-2. Custom count
-    * Verify `show interfaces counters top -n 3` returns exactly 3 interfaces.
-    * Verify behavior when the requested count exceeds the number of available interfaces (returns all without error).
-3. Sort and Units flags
-    * Verify `--sort rx` and `--sort tx` correctly sort by RX and TX rates.
-    * Verify `--sort util` correctly sorts interfaces by utilization percentage.
-    * Verify `--units pps` correctly sorts based on packets per second instead of bytes per second.
-4. Tie-breaking
-    * Verify deterministic ordering (natural sort order by interface name) when multiple interfaces have identical rates (e.g., all 0 bps).
-5. Error handling
-    * Verify invalid sort keys (e.g., `--sort bandwidth`) raise `BadParameter` errors.
-    * Verify invalid counts (e.g., `-n 0` or `-n -1`) raise `BadParameter` errors.
-    * Verify empty or unavailable `RATES:` table gracefully handles missing data without tracebacks.
-6. JSON output
-    * Verify `--json` flag produces structurally correct JSON containing `sampled_at`, `sort_key`, `count`, and a list of `interfaces` with float values.
-
-## 13.2 System Test cases
-
-System tests are run on a real SONiC switch or a sonic-vs (Virtual Switch) to verify end-to-end behavior within the `sonic-mgmt` framework.
-
-1. Basic operation on hardware switch
-    * Using a traffic generator, push traffic at varying rates on multiple interfaces.
-    * Run `show interfaces counters top -n 5` and verify the output accurately reflects the top congested interfaces.
-2. Consistency with existing `rates` command
-    * Run `show interfaces counters rates` followed by `show interfaces counters top`.
-    * Verify the reported BPS/PPS values match exactly, as both rely on the same `RATES:` table.
-
-# 14 Stretch Goals
+# 13 Stretch Goals
 
 The following features are not part of the initial implementation but could be added as follow-up PRs:
 
-### 14.1 `--threshold` Flag
+### 13.1 `--threshold` Flag
 
 A `--threshold X` flag would show only interfaces exceeding X bytes/sec (or packets/sec). This is useful for alerting scripts that want to identify congested interfaces above a specific watermark.
 
@@ -640,11 +532,6 @@ show interfaces counters top --threshold 1000000000
 # Only shows interfaces with total rate > 1 GB/s
 ```
 
-### 14.2 `--reverse` Flag
+### 13.2 `--reverse` Flag
 
 A `--reverse` flag would sort ascending instead of descending, showing the **least** busy interfaces. This is useful for capacity planning and identifying underutilized interfaces.
-
-### 14.3 `--period` Fallback Mode
-
-An optional `--period` flag could be added as a fallback to perform a two-sample delta calculation. This is useful for environments where the `port_rates.lua` plugin is not loaded and the `RATES:` table is unpopulated (such as Virtual Switch environments).
-When the `RATES:` table is empty or all values are `N/A`, and `--period` is not specified, the CLI could print a clear message suggesting the use of `--period`.
