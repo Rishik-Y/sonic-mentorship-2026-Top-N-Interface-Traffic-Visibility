@@ -1,8 +1,8 @@
-# Top N Interfaces by Traffic in SONiC
-# High Level Design Document
-### Rev 0.2
+## Top N Interfaces by Traffic in SONiC
+## High Level Design Document
+#### Rev 0.1
 
-## Table of Content
+### Table of Content
 - [List of Tables](#list-of-tables)
 - [List of Figures](#list-of-figures)
 - [1 Revision](#1-revision)
@@ -15,30 +15,25 @@
 - [8 SAI API](#8-sai-api)
 - [9 Configuration and management](#9-configuration-and-management)
 - [10 Warmboot and Fastboot Design Impact](#10-warmboot-and-fastboot-design-impact)
-- [11 Memory Consumption](#11-memory-consumption)
-- [12 Restrictions/Limitations](#12-restrictionslimitations)
-- [13 Testing Requirements/Design](#13-testing-requirementsdesign)
-    - [13.1 Unit Test cases](#131-unit-test-cases)
-    - [13.2 System Test cases](#132-system-test-cases)
-- [14 Open/Action items - if any](#14-openaction-items---if-any)
+- [11 Things to be Considered](#11-things-to-be-considered)
+- [12 Testing Requirements/Design](#12-testing-requirementsdesign)
+    - [12.1 Unit Test cases](#121-unit-test-cases)
+- [13 Stretch Goals](#13-stretch-goals)
 
-# List of Tables
+## List of Tables
 * [Table 1: Revision](#1-revision)
 * [Table 2: Abbreviations](#3-definitionsabbreviations)
-* [Table 3: Modules to be Updated](#71-modules-design)
 
-# List of Figures
+## List of Figures
 * [Figure 1: High-Level Architecture](#6-architecture-design)
-* [Figure 2: General Data Flow](#general-data-flow)
-* [Figure 3: CLI Execution Flow](#cli-execution-flow)
+* [Figure 2: CLI Execution Flow](#cli-execution-flow)
 
-# 1 Revision
+## 1 Revision
 | Rev |     Date    |       Author            | Change Description                |
 |:---:|:-----------:|:-----------------------:|-----------------------------------|
-| 0.1 | 2026-05-29  | Rishik Yalamanchili     | Initial version (history buffer approach) |
-| 0.2 | 2026-06-25  | Rishik Yalamanchili     | Revised: thin filter on Portstat using pre-computed RATES: table |
+| 0.1 | 2026-05-29  | Rishik Yalamanchili     | Initial version |
 
-# 2 Scope
+## 2 Scope
 This document describes the high level design of the Top N Interfaces by Traffic feature. It covers:
 1. The addition of a `top` subcommand to the existing `show interfaces counters` CLI group within `sonic-utilities`.
 2. The extension of the `scripts/portstat` script with new flags for top-N filtering and sorting.
@@ -46,8 +41,8 @@ This document describes the high level design of the Top N Interfaces by Traffic
 
 No changes are required to `sonic-swss`, `orchagent`, Lua plugins, Config DB, or any daemon. The entire feature is implemented within the `sonic-utilities` repository as a **thin filter** on top of existing infrastructure.
 
-# 3 Definitions/Abbreviations
-## Table 1: Abbreviations
+## 3 Definitions/Abbreviations
+### Table 1: Abbreviations
 | Definitions/Abbreviation | Description                                |
 |--------------------------|--------------------------------------------|
 | RX                       | Receive / Ingress traffic                  |
@@ -57,7 +52,7 @@ No changes are required to `sonic-swss`, `orchagent`, Lua plugins, Config DB, or
 | OID                      | SAI Object Identifier                      |
 | EWMA                     | Exponential Weighted Moving Average        |
 
-# 4 Overview
+## 4 Overview
 
 This document provides general information about the design and implementation of the `show interfaces counters top` feature in SONiC. This feature enables network operators to instantaneously identify the top N interfaces carrying the highest traffic by leveraging the pre-computed rate values already maintained in the `COUNTERS_DB RATES:` table by the existing `port_rates.lua` Flex Counter plugin.
 
@@ -65,13 +60,7 @@ SONiC exposes per-interface traffic counters via COUNTERS_DB and provides CLI to
 
 In large-scale deployments with hundreds of ports, manually scanning counter output to find congested interfaces is inefficient and error-prone. Operators need a single command that returns the top N busiest interfaces, ranked by throughput, instantaneously.
 
-## 4.1 Current Limitations
-
-The current SONiC rate infrastructure has the following characteristics that inform this design:
-
-1. **No ranking or filtering**: The existing `portstat -R` / `show interfaces counters rates` command displays rates for **all** interfaces in natural sort order. There is no option to sort by traffic volume or limit the output to the top N.
-
-## 4.2 Proposed Solution
+### 4.1 Proposed Solution
 
 This feature introduces `show interfaces counters top` as a **thin filter on top of the existing `Portstat` class**. The design reads the `RATES:<oid>` entries that `orchagent`'s `port_rates.lua` plugin already maintains, sorts them by a user-selected key, and displays the top N results.
 
@@ -80,7 +69,7 @@ This feature introduces `show interfaces counters top` as a **thin filter on top
 - **Numerically consistent**: The rates shown are identical to those displayed by `show interfaces counters rates`, since both read from the same `RATES:` table.
 - **Zero backend changes**: No new daemons, no new DB tables, no Lua script modifications, no orchagent changes.
 
-## 4.3 Design Philosophy
+### 4.2 Design Philosophy
 
 The design follows the principle of **maximum reuse of existing infrastructure**:
 
@@ -106,9 +95,9 @@ The design follows the principle of **maximum reuse of existing infrastructure**
 
 This approach ensures that the `top` command benefits from all existing and future improvements to the rate computation pipeline (e.g., improved EWMA tuning, FEC BER enhancements) without any additional maintenance burden.
 
-# 5 Requirements
+## 5 Requirements
 
-## 5.1 Functional Requirements
+### 5.1 Functional Requirements
 
 - The CLI command must return the top N interfaces **instantaneously** by default, leveraging pre-computed rates in the `COUNTERS_DB RATES:` table. There must be no `time.sleep()` or blocking delay under normal operation.
 
@@ -122,7 +111,7 @@ This approach ensures that the `top` command benefits from all existing and futu
 
 - The output should provide deterministic tie-breaking for interfaces with identical rates (e.g., multiple interfaces with 0 bps should be naturally sorted by name using `natsorted`).
 
-## 5.2 CLI Requirements
+### 5.2 CLI Requirements
 
 A new CLI command will be introduced as a subcommand of `show interfaces counters`:
 
@@ -141,9 +130,9 @@ Options:
 
 1. **Placement under `counters`**: The command is placed at `show interfaces counters top` rather than `show interfaces top`. This is consistent with the existing CLI tree where all counter-related views (`rates`, `errors`, `fec-stats`, `trim`, `detailed`) are subcommands of `counters`.
 
-2. **`--count` vs positional argument**: The count is an option (`-n 10`) rather than a positional argument to maintain consistency with the other portstat-based subcommands and to allow a sensible default of 5.
+2. **Backward compatibility**: The `top` feature introduces a new subcommand of `counters` and new flags in `portstat`. Backward compatibility is fully maintained. No existing CLI commands, scripts, or automation workflows are affected.
 
-## 5.3 Scalability Requirements
+### 5.3 Scalability Requirements
 
 - The command execution time must remain sub-second regardless of the number of ports, as it performs a single pass through the `ratestat_dict` already loaded in memory by `Portstat.get_cnstat_dict()`.
 
@@ -151,7 +140,7 @@ Options:
 
 - No additional Redis operations are introduced beyond what `Portstat.get_cnstat_dict()` already performs. The `top` filter is a pure Python in-memory operation on the data already fetched.
 
-# 6 Architecture Design
+## 6 Architecture Design
 
 The feature relies on a read-only consumer model. The new CLI command simply reads the data it already produces and applies a sort-and-filter operation.
 
@@ -196,27 +185,9 @@ graph TB
 
 
 
-# 7 High-Level Design
+## 7 High-Level Design
 
-## 7.1 Modules Design
-
-The following table summarizes all components that require modification or creation. All changes are within the `sonic-utilities` repository.
-
-| Module / File | Repository | Action |
-|---|---|---|
-| `show/interfaces/__init__.py` | sonic-utilities | **Modify**: add `top` Click subcommand to `counters` group |
-| `scripts/portstat` | sonic-utilities | **Modify**: add `-X/--top_n`, `--sort`, `--units` flags |
-| `utilities_common/portstat.py` | sonic-utilities | **Modify**: add `get_top_n()` method and `top_n_diff_print()` method |
-| `tests/portstat_top_n_test.py` | sonic-utilities | **New**: unit tests for the top-N feature |
-
-**No changes required in:**
-- `sonic-swss` (no orchagent, no Lua plugin, no flexcounterorch changes)
-- `counterpoll` (no new counter groups)
-- Config DB (no new schema)
-- COUNTERS_DB (no new key families)
-
-
-The `show/interfaces/__init__.py` module will define the `top` CLI entry point using Click, which simply constructs the arguments and delegates to the `portstat` script. The `portstat` script will parse the new arguments and invoke the logic inside the `Portstat` class. 
+### 7.1 Modules Design
 
 In `sonic-utilities/utilities_common/portstat.py`, two new methods are added to the `Portstat` class to handle the core logic:
 
@@ -281,9 +252,9 @@ def top_n_diff_print(self, cnstat_new_dict, cnstat_old_dict, ratestat_dict,
 
 3. **JSON structure**: The JSON output includes metadata (`sampled_at`, `sort_key`) and a flat array of interface objects.
 
-## 7.2 Flows
+### 7.2 Flows
 
-### CLI Execution Flow
+#### CLI Execution Flow
 
 The following sequence diagram shows the internal call chain when an operator runs `show interfaces counters top -n 5 --sort total`:
 
@@ -334,30 +305,17 @@ sequenceDiagram
 ```
 
 
-# 8 SAI API
+## 8 SAI API
 
 N/A
 
-# 9 Configuration and management
+## 9 Configuration and management
 
+### 9.1 CLI Commands
 
-## 9.1 CLI model Enhancements
+#### show interfaces counters top
 
-The `top` feature introduces a new subcommand of `counters` and new flags in `portstat`. Backward compatibility is fully maintained. No existing CLI commands, scripts, or automation workflows are affected. Users can save and restore configurations without impact.
-
-| Existing command | Impact |
-|---|---|
-| `show interfaces counters` | Unchanged (`top` is a new subcommand) |
-| `show interfaces counters rates` | Unchanged (continues to use `portstat -R`) |
-| `show interfaces counters errors` | Unchanged |
-| `portstat` (direct invocation) | New flags added (`-X`, `--sort`, `--units`), but existing flags and behavior are unmodified |
-| `counterpoll` | Unchanged (no new counter groups) |
-
-## 9.2 CLI Commands
-
-### show interfaces counters top
-
-### Basic usage: show top 5 interfaces (default)
+#### Basic usage: show top 5 interfaces (default)
 
 ```bash
 admin@sonic:~$ show interfaces counters top
@@ -372,7 +330,7 @@ Sampled at 2026-06-25 10:14:03
      5  Ethernet48         U  211.06 MB/s   259000.00/s  198.92 MB/s  244500.00/s   409.98 MB/s   503500.00/s  21.11%
 ```
 
-### Custom count
+#### Custom count
 
 ```bash
 admin@sonic:~$ show interfaces counters top -n 3
@@ -385,7 +343,7 @@ Sampled at 2026-06-25 10:14:05
      3  Ethernet64         U  482.01 MB/s   593000.00/s  521.57 MB/s  641000.00/s  1003.58 MB/s  1234000.00/s  52.16%
 ```
 
-### Sort by RX traffic
+#### Sort by RX traffic
 
 ```bash
 admin@sonic:~$ show interfaces counters top -n 5 --sort rx
@@ -400,7 +358,7 @@ Sampled at 2026-06-25 10:14:10
      5  Ethernet48         U  211.06 MB/s   259000.00/s  198.92 MB/s  244500.00/s   409.98 MB/s   503500.00/s  21.11%
 ```
 
-### Sort by utilization
+#### Sort by utilization
 
 ```bash
 admin@sonic:~$ show interfaces counters top -n 5 --sort util
@@ -415,7 +373,7 @@ Sampled at 2026-06-25 10:14:15
      5  Ethernet48         U  211.06 MB/s   259000.00/s  198.92 MB/s  244500.00/s   409.98 MB/s   503500.00/s  21.11%
 ```
 
-### Rank by packets per second
+#### Rank by packets per second
 
 ```bash
 admin@sonic:~$ show interfaces counters top -n 3 --units pps
@@ -429,10 +387,10 @@ Sampled at 2026-06-25 10:14:20
 ```
 
 
-### JSON output
+#### JSON output
 
 ```bash
-admin@sonic:~$ show interfaces counters top -n 3 --json
+admin@sonic:~$ show interfaces counters top -n 3 --json --units bps
 {
     "sampled_at": "2026-06-25T10:14:25.118000",
     "sort_key": "total_bps",
@@ -483,7 +441,7 @@ admin@sonic:~$ show interfaces counters top -n 3 --json
 
 
 
-### All interfaces have zero traffic
+#### All interfaces have zero traffic
 
 ```bash
 admin@sonic:~$ show interfaces counters top -n 3
@@ -498,31 +456,31 @@ Sampled at 2026-06-25 10:14:40
 
 Note: Interfaces with identical (zero) rates are tie-broken by natural sort order of the interface name.
 
-## 9.3 Config DB Enhancements
+### 9.2 Config DB Enhancements
 
 N/A
 
-# 10 Warmboot and Fastboot Design Impact
+## 10 Warmboot and Fastboot Design Impact
 
 N/A
 
-# 11 Things to be Considered
+## 11 Things to be Considered
 
 1. **`RATES:` population varies by platform:** Some vendor SDKs disable specific stats. When a counter is unavailable, the corresponding `RATES:<oid>` field will be `N/A`. The `safe_float()` helper safely treats these as `0.0` for sorting, ensuring the CLI gracefully handles incomplete data.
 2. **VOQ chassis path:** On supervisor cards, `Portstat.collect_stat_from_lc()` reads from `CHASSIS_STATE_DB` using a different schema. The rate fields (`rx_bps`, `tx_bps`, etc.) are present there too, and populate the same dictionary that the `top` filter operates on. (Needs one VOQ-fixture test to confirm).
 3. **EWMA α value limitation:** The smoothing factor is configured per-deployment in `RATES:PORT`. A short microburst won't show up in these stats since it gets diluted by the EWMA smoothing. Users investigating microbursts should be directed to the watermark counters (`show queue watermark`) instead.
 
-# 12 Testing Requirements/Design
+## 12 Testing Requirements/Design
 
-### Unit Test cases 
+#### Unit Test cases 
 
 The unit tests will be provided during implementation.
 
-# 13 Stretch Goals
+## 13 Stretch Goals
 
 The following features are not part of the initial implementation but could be added as follow-up PRs:
 
-### 13.1 `--threshold` Flag
+#### 13.1 `--threshold` Flag
 
 A `--threshold X` flag would show only interfaces exceeding X bytes/sec (or packets/sec). This is useful for alerting scripts that want to identify congested interfaces above a specific watermark.
 
@@ -532,6 +490,6 @@ show interfaces counters top --threshold 1000000000
 # Only shows interfaces with total rate > 1 GB/s
 ```
 
-### 13.2 `--reverse` Flag
+#### 13.2 `--reverse` Flag
 
 A `--reverse` flag would sort ascending instead of descending, showing the **least** busy interfaces. This is useful for capacity planning and identifying underutilized interfaces.
