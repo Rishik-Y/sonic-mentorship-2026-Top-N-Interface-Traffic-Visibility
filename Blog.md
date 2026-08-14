@@ -10,19 +10,19 @@ I have always been actively involved in open-source projects in the background. 
 
 I worked on the **Top-N Interface Traffic Visibility Feature in SONiC**. 
 
-In large-scale data center deployments with hundreds of ports, operators often need to quickly identify which interfaces are carrying the highest traffic. While SONiC exposes per-interface traffic counters and provides tools like `show interfaces counters rates` to display current rates for all interfaces, there was no mechanism to instantaneously rank and find the most congested interfaces. Scanning through hundreds of ports manually is inefficient and error-prone. 
+In large-scale data center deployments with hundreds of ports, operators often need to quickly identify which interfaces are carrying the highest traffic. While SONiC exposes per-interface traffic counters and provides tools like `show interfaces counters rates` to display current rates for all interfaces, there was no mechanism to quickly rank and find the most congested interfaces. Scanning through hundreds of ports manually is inefficient and error-prone. 
 
-This project solves that problem by introducing the `show interfaces counters top` command. It enables network operators to instantaneously identify the top N interfaces carrying the highest traffic by leveraging the pre-computed rate values already maintained in the `COUNTERS_DB`. It works as a thin filter, requiring zero backend changes while drastically improving network monitoring efficiency.
+This project solves that problem by introducing the `show interfaces counters top` command. It enables network operators to immediately identify the top N interfaces carrying the highest traffic by leveraging the pre-computed rate values already maintained in the `COUNTERS_DB`. It works as a thin filter, requiring zero backend changes while drastically improving network monitoring efficiency.
 
 ### Q: What were your main technical contributions?
 
 My main contribution was implementing the `top` subcommand under the existing `show interfaces counters` CLI group within the `sonic-utilities` repository. 
 
-Rather than creating new daemons or database tables, the feature was designed as a lightweight, in-memory filter on top of the existing `Portstat` class infrastructure. It reads the pre-computed rate entries (`RATES:<oid>`) maintained by `orchagent`'s `port_rates.lua` plugin, sorts them based on a user-selected key, and instantly displays the top N results.
+Rather than creating new daemons or database tables, the feature was designed as a lightweight, in-memory filter on top of the existing `Portstat` class infrastructure. It reads the pre-computed rate entries (`RATES:<oid>`, e.g., `RATES:oid:0x1000000000002`) maintained by the `port_rates.lua` flex counter plugin registered by `orchagent`. Crucially, because these values are already EWMA-smoothed (Exponentially Weighted Moving Average), the command can execute immediately without requiring a traditional sample-and-diff round trip. It then sorts them based on a user-selected key, and displays the top N results.
 
 I extended the `scripts/portstat` script with new flags and added the core sorting logic (`get_top_n()`) into `utilities_common/portstat.py`. I ensured the feature is highly customizable, allowing operators to:
 - Rank interfaces by different keys: `total`, `rx`, `tx`, and `util` (utilization).
-- Sort by either `bps` (Bytes per second) or `pps` (Packets per second).
+- Sort by either bytes/s (`--units bps`) or packets/s (`--units pps`). (Note: While 'bps' conventionally stands for bits per second, SONiC's rate fields are derived directly from hardware octet counters, meaning the CLI's `bps` metric is actually byte-based).
 - Generate JSON output for automation systems.
 - Use natural sorting (`natsort`) as a deterministic tie-breaker for interfaces with identical rates (e.g., zero traffic).
 
