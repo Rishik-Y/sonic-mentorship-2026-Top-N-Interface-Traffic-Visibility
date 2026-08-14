@@ -21,10 +21,13 @@ My main contribution was implementing the `top` subcommand under the existing `s
 Rather than creating new daemons or database tables, the feature was designed as a lightweight, in-memory filter on top of the existing `Portstat` class infrastructure. It reads the pre-computed rate entries (`RATES:<oid>`, e.g., `RATES:oid:0x1000000000002`) maintained by the `port_rates.lua` flex counter plugin registered by `orchagent`. Crucially, because these values are already EWMA-smoothed (Exponentially Weighted Moving Average), the command can execute immediately without requiring a traditional sample-and-diff round trip. It then sorts them based on a user-selected key, and displays the top N results.
 
 I extended the `scripts/portstat` script with new flags and added the core sorting logic (`get_top_n()`) into `utilities_common/portstat.py`. I ensured the feature is highly customizable, allowing operators to:
-- Rank interfaces by different keys: `total`, `rx`, `tx`, and `util` (utilization).
+- Rank interfaces by different keys: `--sort total`, `--sort rx`, `--sort tx`, and `--sort util`.
 - Sort by either bytes/s (`--units bps`) or packets/s (`--units pps`). (Note: While 'bps' conventionally stands for bits per second, SONiC's rate fields are derived directly from hardware octet counters, meaning the CLI's `bps` metric is actually byte-based).
-- Generate JSON output for automation systems.
+- Generate JSON output for automation systems (`-j` or `--json`).
+- Control the number of top interfaces displayed (e.g., `-n 5`).
 - Use natural sorting (`natsort`) as a deterministic tie-breaker for interfaces with identical rates (e.g., zero traffic).
+
+Lastly, to ensure the tool's reliability and adhere to the strict contribution guidelines of the SONiC community, I also integrated unit tests into `tests/portstat_test.py`. This validated the new command options and sorting logic under various edge cases before the code was merged.
 
 ![Top interfaces sorted by RX BPS](./Image.png)
 
@@ -45,6 +48,10 @@ Going forward, I plan to continue contributing to open-source projects and maint
 Many, many thanks to my mentor, Nikhil Moray. He helped me on several occasions and was always supportive, whether it was about setting up the environment, refining the HLD documentation, or reviewing the code. Nikhil always looked at everything in detail and was incredibly open and friendly, even telling me I could call him whenever needed. 
 
 I would also like to thank Madhu Paluru, who oversaw our progress and supported the mentorship behind the scenes. Finally, a big thank you to the LFX team and the SONiC community for providing this amazing opportunity!
+
+### Project Links
+
+You can view the concrete artifacts of this work in my successfully merged pull requests: the **[HLD](https://github.com/sonic-net/SONiC/pull/2491)** and the **[PR](https://github.com/sonic-net/sonic-utilities/pull/4416)**.
 
 ### Get Involved
 
