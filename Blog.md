@@ -51,7 +51,7 @@ I would also like to thank Madhu Paluru, who oversaw our progress and supported 
 
 ### Project Links
 
-You can view the concrete artifacts of this work in my successfully merged pull requests: the **[HLD](https://github.com/sonic-net/SONiC/pull/2491)** and the **[PR](https://github.com/sonic-net/sonic-utilities/pull/4416)**.
+You can view the concrete artifacts of this work here: [HLD](https://github.com/sonic-net/SONiC/pull/2491) and [PR](https://github.com/sonic-net/sonic-utilities/pull/4416).
 
 ### Get Involved
 
